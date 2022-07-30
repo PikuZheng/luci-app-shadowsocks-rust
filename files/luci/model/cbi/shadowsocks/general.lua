@@ -92,6 +92,7 @@ o.default = 512
 o.rmempty = false
 
 o = s:option(Flag, "no_dns_injection", translate("Disable DNS Auto-Injection"))
+o.default = 1
 o.rmempty = false
 
 -- [[ Transparent Proxy ]]--
@@ -128,6 +129,7 @@ o.default = 1234
 o.rmempty = false
 
 o = s:option(Flag, "no_healthcheck", translate("Disable HealthCheck"))
+o.default = 1
 o.rmempty = false
 
 -- [[ HTTP Proxy ]]--

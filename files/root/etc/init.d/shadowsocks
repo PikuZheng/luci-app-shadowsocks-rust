@@ -11,7 +11,7 @@ START=90
 STOP=15
 
 NAME=shadowsocks
-EXTRA_COMMANDS="rules healthcheck"
+EXTRA_COMMANDS="rules"
 CRON_FILE=/etc/crontabs/root
 WATCHDOG_ENDPOINT='accounts.gstatic.com'
 
@@ -335,7 +335,7 @@ stop() {
 
 add_cron() {
 	[ -f $CRON_FILE ] || return 0
-	uci_bool_by_type transparent_proxy no_healthcheck && return 0
+	uci_bool_by_type transparent_proxy no_healthcheck && del_cron && return 0
 
 	sed -i '/shadowsocks_healthcheck/d' $CRON_FILE
 	echo '0   */3   * * *  rm -f /var/log/shadowsocks_healthcheck.log 2>&1' >>$CRON_FILE
