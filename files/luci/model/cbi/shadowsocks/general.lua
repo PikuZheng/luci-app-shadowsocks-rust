@@ -7,6 +7,11 @@ local shadowsocks = "shadowsocks"
 local uci = luci.model.uci.cursor()
 local servers = {}
 
+local apply = luci.http.formvalue("cbi.apply")
+if apply then
+	io.popen("/etc/init.d/shadowsocks restart")
+end
+
 local function has_bin(name)
 	return luci.sys.call("command -v %s >/dev/null" %{name}) == 0
 end
