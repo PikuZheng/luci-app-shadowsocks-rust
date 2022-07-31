@@ -14,6 +14,7 @@ NAME=shadowsocks
 EXTRA_COMMANDS="rules"
 CRON_FILE=/etc/crontabs/root
 WATCHDOG_ENDPOINT='accounts.gstatic.com'
+LOG_CONFIG=/etc/shadowsocks-logconfig.yml
 
 DNSMASQDIR=$(sed -n 's+conf-dir=++p' /var/etc/dnsmasq.conf.* 2>/dev/null)
 [ "V$DNSMASQDIR" = "V" ] && DNSMASQDIR=/var/dnsmasq.d
@@ -247,6 +248,7 @@ start_redir() {
 	cd /var/run/ssservice
 	sslocal -d $(get_arg_tnd transparent_proxy) \
 		-c=$(gen_config_file "$1" "redir$2" $(uci_get_by_type transparent_proxy local_port 1234)) \
+		--log-config=$LOG_CONFIG \
 		--daemonize-pid=/var/run/ss-redir$2.pid
 	cd - >/dev/null
 }
@@ -269,6 +271,7 @@ start_local() {
 	cd /var/run/ssservice
 	sslocal -d $(get_arg_tnd ${2}_proxy) \
 		-c=$(gen_config_file "$1" "$2" $(uci_get_by_type ${2}_proxy local_port 1080)) \
+		--log-config=$LOG_CONFIG \
 		--daemonize-pid=/var/run/ss-local-$2.pid
 	cd - >/dev/null
 }
@@ -289,6 +292,7 @@ start_tunnel() {
 			-e "/local_address/i\      \"forward_port\": $port,"
 	done
 	sslocal -d $(get_arg_tnd port_forward) \
+		--log-config=$LOG_CONFIG \
 		-c=$config --daemonize-pid=/var/run/ss-tunnel.pid
 	cd - >/dev/null
 }
@@ -416,3 +420,10 @@ healthcheck() {
 	iptables -t nat -D OUTPUT -p tcp -d $DNSPOD -j RETURN
 	return 0
 }
+
+reload_service()
+{
+	stop
+	start
+}
+

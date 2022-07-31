@@ -1,0 +1,20 @@
+appenders:
+  file:
+    kind: rolling_file
+    path: "/var/log/shadowsocks_healthcheck.log"
+    encoder:
+      kind: pattern
+      pattern: "{d} {h({l}):<5} {m}{n}"
+    policy:
+      trigger:
+        kind: size
+        limit: 10 mb
+      roller:
+        kind: fixed_window
+        pattern: shadowsocks_healthcheck.{}.log
+        count: 1
+
+root:
+  level: info
+  appenders:
+    - file
