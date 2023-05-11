@@ -1,7 +1,7 @@
 #!/bin/sh /etc/rc.common
 #
 # Copyright (C) 2014-2017 Jian Chang <aa65535@live.com>
-#               2018-2022 honwen <https://github.com/honwen>
+#               2018-2023 honwen <https://github.com/honwen>
 #
 # This is free software, licensed under the GNU General Public License v3.
 # See /LICENSE for more information.
@@ -12,8 +12,10 @@ STOP=15
 
 NAME=shadowsocks
 EXTRA_COMMANDS="rules"
+EXTRA_HELP="	rules		Start IPTABLES inject\n	healthcheck	Check if service health"
 CRON_FILE=/etc/crontabs/root
 WATCHDOG_ENDPOINT='accounts.gstatic.com'
+# WATCHDOG_ENDPOINT='cp.cloudflare.com'
 LOG_CONFIG=/etc/shadowsocks-logconfig.yml
 
 DNSMASQDIR=$(sed -n 's+conf-dir=++p' /var/etc/dnsmasq.conf.* 2>/dev/null)
@@ -181,12 +183,14 @@ ss_cleandns() {
 ss_injectdns() {
 	uci_bool_by_type general no_dns_injection && return 0
 
+	echo >&2 "# Info: $NAME dnsmasq injecting..."
+
 	mkdir -p $DNSMASQDIR
 	DNSconf=$DNSMASQDIR/ss-servers.conf
 	tmpDNSconf=$DNSMASQDIR/ss.conf
 	echo "all-servers" >$tmpDNSconf
 	config_load $NAME
-	for server in $(config_foreach get_server_ips servers); do
+	for server in $(config_foreach get_server_ips servers | sort -u | grep -v '[0-9]$'); do
 		cat <<-EOF >>$tmpDNSconf
 			ipset=/${server}/ss_spec_dst_sp
 			server=/${server}/#
@@ -217,15 +221,22 @@ ss_injectdns() {
 		server=/t.cn/114.114.114.114
 	EOF
 
-	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+	/etc/init.d/dnsmasq reload >/dev/null 2>&1
 	# wait-for-dns, timeout 10s
-	for _ in $(seq 10); do if ping -4 -q -c 1 -s 0 -W 1 -w 1 t.cn >/dev/null 2>&1; then break; fi; done
+	if which wait4x >/dev/null 2>&1; then # use [wait4x]
+		wait4x http http://$DNSPROBE_DOMAIN --no-redirect -q
+	elif which wait-for >/dev/null 2>&1; then # use [wait-for]
+		wait-for -t=10s http --url=http://$DNSPROBE_DOMAIN >/dev/null 2>&1
+	else # use [ping]
+		for _ in $(seq 10); do if ping -4 -q -c 1 -s 0 -W 1 -w 1 $DNSPROBE_DOMAIN >/dev/null 2>&1; then break; fi; done
+	fi
+	echo >&2 "# Info: $NAME dnsmasq injected."
 }
 
 start_rules() {
 	config_load $NAME
 	/usr/bin/ss-rules \
-		-s "$(config_foreach get_server_ips servers)" \
+		-s "$(config_foreach get_server_ips servers | sort -u)" \
 		-l "$(uci_get_by_type transparent_proxy local_port 1234)" \
 		-B "$(uci_get_by_type access_control wan_bp_list)" \
 		-b "$(uci_get_by_type access_control wan_bp_ips)" \
@@ -321,8 +332,9 @@ boot() {
 }
 
 kill_all() {
-	pidof $@ >/dev/null 2>&1 || return 1
-	kill -9 $(pidof $@) >/dev/null 2>&1
+	for it in $@; do
+		kill -9 $(pgrep -f $it) >/dev/null 2>&1
+	done
 }
 
 stop() {
@@ -367,15 +379,27 @@ healthcheck() {
 		start >/dev/null 2>&1
 		return 0
 	}
+	iptables -n -t nat -L PREROUTING | grep -q '_SPEC_LAN_DG' || {
+		echo "[${LOGTIME}] Problem decteted, restarting ${NAME}..."
+		stop >/dev/null 2>&1
+		start >/dev/null 2>&1
+		return 0
+	}
 
 	cat_connect() {
 		target="$1"
 		retry=${2:-1}
 		timeout=5
 		[ $retry -lt 1 ] && return 1
-		ret_code=$(curl -s --connect-timeout $timeout "$target" -w %{http_code} -o /dev/null | tail -n1)
-		# echo -n "[ $retry $ret_code ] "
-		[ "x$ret_code" = "x200" -o "x$ret_code" = "x204" ] && return 0 || sleep 1 && cat_connect $target $((retry - 1))
+		if which wait4x >/dev/null 2>&1; then # use [wait4x]
+			wait4x http $target || cat_connect $target $((retry - 1))
+		elif which wait-for >/dev/null 2>&1; then # use [wait-for]
+			wait-for -t=10s http --url=$target >/dev/null 2>&1 || cat_connect $target $((retry - 1))
+		else # use [curl]
+			ret_code=$(curl -s --connect-timeout $timeout "$target" -w %{http_code} -o /dev/null | tail -n1)
+			# echo -n "[ $retry $ret_code ] "
+			[ "x$ret_code" = "x200" -o "x$ret_code" = "x204" ] && return 0 || sleep 1 && cat_connect $target $((retry - 1))
+		fi
 	}
 
 	TRPORT=$(uci_get_by_type transparent_proxy local_port 1234)
