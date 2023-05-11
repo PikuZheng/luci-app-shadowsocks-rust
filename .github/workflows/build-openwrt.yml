@@ -1,0 +1,64 @@
+name: Test Build Openwrt Stable
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  release:
+    name: Build for ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            sdk_url_path: https://downloads.openwrt.org/releases/22.03.3/targets/x86/64
+            sdk_name: -sdk-22.03.3-x86-64_
+    env:
+      SDK_URL_PATH: ${{ matrix.sdk_url_path }}
+      SDK_NAME: ${{ matrix.sdk_name }}
+      ARCH: ${{ matrix.arch }}
+      CACHE_DIR: ~/cache
+      OPENWRT_RELEASE: 22.03.3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: ${{ runner.os }}:openwrt-v2ray:${{ env.ARCH }}:release:cache:${{ github.run_number }}
+          restore-keys: |
+            ${{ runner.os }}:openwrt-v2ray:${{ env.ARCH }}:cache:
+      - name: Setup CCache
+        uses: actions/cache@v3
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}:openwrt-v2ray:${{ env.ARCH }}:release:ccache:${{ github.run_number }}
+          restore-keys: |
+            ${{ runner.os }}:openwrt-v2ray:${{ env.ARCH }}:ccache:
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update && \
+            sudo apt-get install -yq gettext libncurses5-dev rsync xsltproc
+      - name: Prepare For Build
+        run: |
+          sdk_home="$(mktemp -d)"
+          test -d ~/.ccache || mkdir -p ~/.ccache
+          ln -sf ~/.ccache "$sdk_home/.ccache"
+          echo "SDK_HOME=$sdk_home" >> $GITHUB_ENV
+          echo "CONFIG_CCACHE=y" >> $GITHUB_ENV
+      - name: Build package
+        env:
+          OPENWRT_GOLANG_COMMIT: ${{ secrets.OPENWRT_GOLANG_COMMIT }}
+        run: sh ${{ github.workspace }}/make_openwrt.sh
+
+      - name: Upload To Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: luci-app-shadowsocks-rust-${{ matrix.arch }}
+          path: "package/openwrt/*.ipk"
